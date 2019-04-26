@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <!-- <script type="text/javascript" src="js/plugins/d3/d3.v3.min.js"></script>-->
+    <script type="text/javascript" src="js/plugins/d3/d3.v4.js"></script>
+    <script type="text/javascript" src="js/plugins/jquery/jquery-1.9.1.js"></script>
+    <script type="text/javascript" src="js/plugins/layer/layer.js"></script>
+    <link rel="stylesheet" href="css/demo.css"/>
+</head>
+<div class="cm-toobar" style="position:absolute; left:200px; top:15px; z-index:9">
+    <button class="cm-btn" id="J_AddNode">增加节点</button>
+    <button class="cm-btn">增加连线</button>
+</div>
+<div class="add-node-dialog"  style="display:none">
+    <table width="100%">
+        <tr>
+            <td class="td-til">节点名称：</td>
+            <td><input type="text" name="nodeName" /></td>
+        </tr>
+    </table>
+</div>
+<body>
+<script type="text/javascript">
+    d3.json("./js/data/data1.json", function(error,json) {
+
+
+
+        function groupExplorer(wrapper){
+            var highlighted=null,dependsNode=[],dependsLinkAndText=[];
+            var zoomed=function(){
+                vis.attr("transform", d3.event.transform);
+            };
+            var zoom = d3.zoom()
+                    .scaleExtent([0.2,10])
+                    .on("zoom",function(){
+                        zoomed();
+                    });
+
+            var vis = d3.select("body").append("svg:svg")
+                    .attr("width", window.innerWidth)
+                    .attr("height", window.innerHeight)
+                    .attr('class','group-explorer')
+                    .call(zoom).on("dblclick.zoom", null)
+                    .append('g').attr('class','all')
+                    .append("svg:defs").selectAll("marker")
+                    .data(["end"])
+                    .enter().append("svg:marker")
+                    .attr("id", "arrow")
+                    .attr('class', 'arrow')
+                    .attr("viewBox", "0 0 100 100")
+                    .attr("refX", 20)
+                    .attr("refY", 5)
+                    .attr("markerWidth", 9)
+                    .attr("markerHeight", 9)
+                    .attr("markerUnits", "strokeWidth")
+                    .attr("orient", "auto")
+                    .append("svg:path")
+                    .attr("d", "M0,-5L10,0L0,5")
+                    .attr('fill', '#666');
+
+            var simulation = d3.forceSimulation()
+                    .nodes(json.nodes)
+                    .force("link", d3.forceLink(json.links).distance(100))
+                    .force("charge", d3.forceManyBody())
+                    .force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2))
+                    .force("charge",d3.forceManyBody())
+                    .force("collide",d3.forceCollide(60).strength(0.2).iterations(5))
+
+            console.info(json.links)
+
+            var link = vis.selectAll("line.link")
+                    .data(json.links)
+                    .enter().append("svg:path")
+                    .attr("class", "link")
+                    .attr('stroke-width',1)
+                    .attr('id', function (d) {
+                        console.info(d)
+                        //return d.source.index + '_' + d.target.index
+                    })
+                    .attr('marker-end', function (d) {
+                        console.info("ddddd",d)
+                        if (d.source.index == d.target.index) {
+                            return false; //不应该有指向自己的关系 异常处理
+                        } else {
+                            return "url(#arrow)"
+                        }
+                    })
+                    .attr('stroke','#18a1cf')
+                    .attr('fill','none');
+
+
+            var node = vis.selectAll("g.node");
+
+            var linetext = vis.selectAll('.linetext');
+
+
+            function update() {
+
+
+                var dragstart = function (d, i) {
+                    simulation.stop();
+                    d3.event.sourceEvent.stopPropagation();
+                };
+
+                var dragmove = function (d, i) {
+                    d.px += d3.event.dx;
+                    d.py += d3.event.dy;
+                    d.x += d3.event.dx;
+                    d.y += d3.event.dy;
+                    tick();
+                };
+
+                var dragend = function (d, i) {
+                    d3.event.subject.fx = null;
+                    d3.event.subject.fy = null;
+                };
+
+                var nodeDrag = d3.drag()
+                        .on("start", dragstart)
+                        .on("drag", dragmove)
+                        .on("end", dragend);
+
+                node=node.data(json.nodes,function(d){return d.id})
+                        .enter().append("svg:g")
+                        .attr("class", "node")
+                        .call(nodeDrag)
+                        .on('contextmenu', function (d) {
+                            if (node.mouseoutTimeout) {
+                                clearTimeout(node.mouseoutTimeout);
+                                node.mouseoutTimeout = null;
+                            }
+                            highlightToolTip(d);
+                            d3.event.preventDefault();
+                            d3.event.stopPropagation();
+                        })
+                        .on('mouseout', function () {
+                            if (node.mouseoutTimeout) {
+                                clearTimeout(node.mouseoutTimeout);
+                                node.mouseoutTimeout = null;
+                            }
+                            node.mouseoutTimeout = setTimeout(function () {
+                                highlightToolTip(null);
+                            }, 300);
+                        })
+                var highlightObject = function (obj) {
+                    if (obj) {
+                        var objIndex = obj.index;
+                        dependsNode = dependsNode.concat([objIndex]);
+                        dependsLinkAndText = dependsLinkAndText.concat([objIndex]);
+                        node.classed('inactive', function (d) {
+                            return (dependsNode.indexOf(d.index) > -1)
+                        });
+                        link.classed('inactive', function (d) {
+                            return ((dependsLinkAndText.indexOf(d.source.index) > -1) || (dependsLinkAndText.indexOf(d.target.index) > -1))
+                        });
+
+                        linetext.classed('inactive', function (d) {
+                            return ((dependsLinkAndText.indexOf(d.source.index) > -1) && (dependsLinkAndText.indexOf(d.target.index) > -1))
+                        });
+                    } else {
+                        node.classed('inactive', false);
+                        link.classed('inactive', false);
+                        linetext.classed('inactive', false);
+                    }
+                };
+
+
+                var bindMenuEvent = function (obj) {
+                    //收起当前节点
+                    $('.tooltip').on('click', '.cm-btn.collapseCurNode', function () {
+                        highlightObject(obj);
+                    })
+                };
+
+                var highlightToolTip = function (obj) {
+                    if (obj) {
+                        tooltip.html("<div class='title'>编辑</div><table class='detail-info'><tr><td><span class='cm-btn collapseCurNode'>收起当前节点</span></td></tr>" +
+                                        "<tr><td>菜单选项二</td></tr><tr><td>菜单选项三</td></tr></table>")
+                                .style("left", (d3.event.pageX + 20) + "px")
+                                .style("top", (d3.event.pageY - 20) + "px")
+                                .style("opacity", 1.0);
+                        bindMenuEvent(obj);
+                    } else {
+                        tooltip.style("opacity", 0.0);
+                    }
+                };
+
+                var tooltip = d3.select("body").append("div")
+                        .attr("class", "tooltip")
+                        .attr("opacity", 0.0)
+                        .on('dblclick', function () {
+                            d3.event.stopPropagation();
+                        })
+                        .on('mouseover', function () {
+                            if (node.mouseoutTimeout) {
+                                clearTimeout(node.mouseoutTimeout);
+                                node.mouseoutTimeout = null;
+                            }
+                        })
+                        .on('mouseout', function () {
+                            if (node.mouseoutTimeout) {
+                                clearTimeout(node.mouseoutTimeout);
+                                node.mouseoutTimeout = null;
+                            }
+                            node.mouseoutTimeout = setTimeout(function () {
+                                highlightToolTip(null);
+                            }, 300);
+                        });
+
+                d3.select("body").on('dblclick', function () {
+                    dependsNode = [];
+                    dependsLinkAndText = [];
+                    highlightObject(null);
+                    simulation.restart();
+                });
+
+                node.append("svg:image")
+                        .attr("class", "circle")
+                        .attr("xlink:href", "images/mobile.png")
+                        .attr("x", "-15px")
+                        .attr("y", "-15px")
+                        .attr("width", "30px")
+                        .attr("height", "30px");
+
+                node.append("svg:text")
+                        .attr("class", "nodetext")
+                        .attr("dy", "30px")
+                        .attr('text-anchor', 'middle')
+                        .text(function (d) {
+                            return d.name
+                        });
+
+                linetext=linetext.data(json.links)
+                        .enter()
+                        .append("text")
+                        .append('avg:textPath')
+                        .attr("class", "linetext")
+                        .attr("startOffset", "50%")
+                        .attr("text-anchor", "middle")
+                        .attr("xlink:href", function (d) {
+                            if (d.source.index == d.target.index) {
+                                return false; //不应该有指向自己的关系 异常处理
+                            } else {
+                                return "#" + d.source.index + "_" + d.target.index;
+                            }
+                        })
+                        .text(function (d) {
+                            return d.relation;  //关系文字
+                        })
+                        .attr('fill', '#18a1cf');
+
+            }
+            function arcPath(leftHand, d){
+                var start = leftHand ? d.source : d.target,
+                        end = leftHand ? d.target : d.source,
+                        dx = end.x - start.x,
+                        dy = end.y - start.y,
+                        dr = Math.sqrt(dx * dx + dy * dy),
+                        sweep = leftHand ? 0 : 1;
+                return "M" + start.x + "," + start.y + "A" + dr + "," + dr +
+                        " 0 0," + sweep + " " + end.x + "," + end.y;
+            }
+
+            function tick() {
+                link.attr("d", function(d) {
+                    //弧线路径位置
+                    return arcPath(false, d);
+                });
+                //关系文字显示的位置
+                linetext.attr("d", function(d) {
+                    return arcPath(d.source.x < d.target.x, d);
+                });
+                node.attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+            }
+
+            simulation.on("tick", tick);
+            function bindEvent() {
+                var addNode = function () {
+                    $('#J_AddNode').on('click',function(){
+                        layer.open({
+                            type: 1,
+                            title: "增加节点",
+                            btn: ['确定', '取消'],
+                            area: ['420px', '150px'], //宽高
+                            content: $('.add-node-dialog'),
+                            yes: function (index, layero) {
+                                json.nodes.pop();
+                               // update();
+                                simulation.restart()
+                            },
+                            btn2: function (index, layero) {
+
+                            }
+                        });
+
+                    });
+                };
+                addNode();
+            }
+            update();
+            bindEvent();
+        }
+        groupExplorer('body')
+    });
+
+
+
+</script>
+
+</body>
+</html>
+
+
